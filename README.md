@@ -25,16 +25,22 @@ txt2sqlは、**SQLを書かずに自然言語でデータベースを操作**で
 
 ### 動作確認済み環境
 
-- **OS**: Ubuntu 24.04 LTS
+- **OS**: Ubuntu 24.04 LTS、Windows 11
 - **Python**: 3.10以上（開発環境: Python 3.13.5）
 - **ブラウザ**: Chrome, Firefox, Edge, Safari（最新版推奨）
 
 ### 未検証の環境
 
 以下の環境では動作未確認です（動く可能性はあります）:
-- Windows 10/11
+- Windows 10
 - macOS
 - WSL (Windows Subsystem for Linux)
+
+### Windows環境での注意事項
+
+Windowsでは `python3` ではなく `python` コマンドを使用します:
+- ✅ 正: `python -m venv venv`
+- ❌ 誤: `python3 -m venv venv`
 
 ---
 
@@ -81,17 +87,19 @@ cd txt2sql
 
 ### ステップ3: 仮想環境の作成（推奨）
 
+**Ubuntu/macOS**:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-**確認**: プロンプトの先頭に `(venv)` が表示されればOK
-
-**Windows の場合**:
-```bash
+**Windows**:
+```cmd
+python -m venv venv
 venv\Scripts\activate
 ```
+
+**確認**: プロンプトの先頭に `(venv)` が表示されればOK
 
 **仮想環境を終了したい場合**:
 ```bash
@@ -229,7 +237,19 @@ brew install python@3.10
 ```
 
 **Windows**:
-[Python公式サイト](https://www.python.org/downloads/)からインストーラーをダウンロードして実行
+1. [Python公式サイト](https://www.python.org/downloads/)から最新版（3.10以上）をダウンロード
+2. ダウンロードした `.exe` ファイルをダブルクリック
+3. **【最重要】** インストーラー起動時の最初の画面で、下部にある **`Add python.exe to PATH`** に必ずチェックを入れる
+   - ⚠️ このチェックを忘れると `python` コマンドが使えません
+4. **`Install Now`** をクリック（pipも自動的にインストールされます）
+5. 「Setup was successful」と表示されたら完了
+6. **インストール完了後、開いているコマンドプロンプト/PowerShellをすべて閉じて、新しく開く**
+7. 確認:
+   ```cmd
+   python --version
+   pip --version
+   ```
+   両方ともバージョンが表示されればOK
 
 ### pipがインストールされていない
 
