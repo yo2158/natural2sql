@@ -10,24 +10,40 @@
 
 ## 📖 このアプリでできること
 
-txt2sqlは、**SQLを書かずに自然言語でデータベースを操作**できるWebアプリケーションです。
+txt2sqlは、**自然言語からSQLを生成してデータベースを閲覧**できるWebアプリケーションです。
+
+![txt2sql スクリーンショット](docs/images/txt2sql_img.jpg)
 
 - 「30代の会員は何人？」→ 自動でSQLを生成して実行
 - 「評価4以上のイタリアンレストラン一覧」→ 結果を表形式で表示
 - エラーが出ても自動で修正を試みます（最大3回）
 - 結果はCSVでダウンロード可能
 
-**データ分析の専門知識は不要です。質問を入力するだけで動きます。**
-
 ---
 
 ## 🖥️ 動作環境
+
+### 必須要件
+
+- **Google Gemini APIキー**（無料で取得可能、詳細は[セットアップ手順](#ステップ4-gemini-apiキーの取得)参照）
 
 ### 動作確認済み環境
 
 - **OS**: Ubuntu 24.04 LTS、Windows 11
 - **Python**: 3.10以上（開発環境: Python 3.13.5）
 - **ブラウザ**: Chrome, Firefox, Edge, Safari（最新版推奨）
+
+### 使用可能なAIモデル
+
+**Gemini**:
+- gemini-2.5-flash（デフォルト、高速）
+- gemini-2.5-pro（高精度）
+- gemini-2.5-flash-lite（超高速）
+
+**Ollama（試験的機能）**:
+- gemma3:12b / gemma3:27b / gpt-oss:latest
+- ⚠️ 自前でOllamaサーバーを構築し、対象モデルをダウンロード済みの場合のみ利用可能
+- `.env` に `OLLAMA_BASE_URL` を設定すれば使用できます
 
 ### 未検証の環境
 
@@ -126,8 +142,16 @@ pip install -r requirements.txt
 
 1. [Google AI Studio](https://aistudio.google.com/app/apikey) にアクセス
 2. Googleアカウントでログイン
-3. 「Create API Key」ボタンをクリック
+3. 「**Get API key**」→「**Create API key in new project**」をクリック
 4. 生成されたAPIキーをコピー（`AIza...` で始まる文字列）
+
+**無料枠について**:
+- Google AI Studioで取得したAPIキーは無料枠で利用可能です
+- 制限を超えるとエラーが返されますが、自動課金はされません
+- 最新の料金・制限情報は[公式サイト](https://ai.google.dev/pricing)で必ず確認してください
+
+**APIキーの取り扱い**:
+- ⚠️ **APIキーは絶対に公開しないでください**（GitHubなどにアップロード厳禁）
 
 #### 5-2. 環境変数ファイルの作成
 
@@ -169,6 +193,8 @@ You can now view your Streamlit app in your browser.
 
 ブラウザが自動で開きます。開かない場合は `http://localhost:8501` にアクセスしてください。
 
+**初回起動時**: メールアドレスの入力を求められることがあります。何も入力せずEnterキーを押せばスキップできます。
+
 **確認**: 画面に「🔍 txt2sql - Text-to-SQL Generator」と表示されればOK
 
 ---
@@ -185,8 +211,8 @@ You can now view your Streamlit app in your browser.
 
 3. **結果を確認**
    - 生成されたSQLクエリが表示されます
-   - クエリ実行結果が表形式で表示されます（最大10件）
-   - 結果全体（最大1000件）をCSVでダウンロードできます
+   - クエリ実行結果が表形式で表示されます（最大1000件）
+   - 結果をCSVでダウンロードできます
 
 ### サンプルクエリ
 
@@ -222,6 +248,32 @@ You can now view your Streamlit app in your browser.
 ---
 
 ## 🛠️ トラブルシューティング
+
+### Gitがインストールされていない
+
+**Windows**:
+1. [Git for Windows公式サイト](https://git-for-windows.org/)にアクセス
+2. 「Download」ボタンをクリックしてインストーラーをダウンロード
+3. ダウンロードした `.exe` ファイルをダブルクリック
+4. **重要な設定項目**:
+   - **Adjusting your PATH environment**: 「Git from the command line and also from 3rd-party software」を選択（デフォルト）
+   - その他の設定: すべてデフォルトのまま「Next」で進めてOK
+5. インストール完了後、コマンドプロンプト/PowerShellを新しく開いて確認:
+   ```cmd
+   git --version
+   ```
+   バージョンが表示されればOK
+
+**Ubuntu/Debian**:
+```bash
+sudo apt update
+sudo apt install git
+```
+
+**macOS (Homebrew)**:
+```bash
+brew install git
+```
 
 ### Python 3.10がインストールされていない
 

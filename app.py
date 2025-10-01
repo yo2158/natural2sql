@@ -192,7 +192,11 @@ def main():
 
                 # Success (Task 34)
                 if result["success"]:
-                    st.success(f"✅ 成功 ({result['row_count']}件)")
+                    # Display success message with row count
+                    if result["row_count"] >= 1000:
+                        st.success(f"✅ 成功 ({result['row_count']}件、最大1000件まで表示)")
+                    else:
+                        st.success(f"✅ 成功 ({result['row_count']}件)")
 
                     # Display results
                     if result["row_count"] > 0:
