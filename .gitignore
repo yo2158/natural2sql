@@ -48,6 +48,8 @@ env/
 # Claude Code
 .claude/
 .memory-keeper/
+.mcp.json
+CLAUDE.md
 
 # OS
 .DS_Store
