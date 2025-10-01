@@ -1,0 +1,12 @@
+[client]
+# デプロイボタンとメニューを非表示
+showErrorDetails = false
+toolbarMode = "minimal"
+
+[browser]
+# 自動でブラウザを開かない（オプション）
+gatherUsageStats = false
+
+[server]
+# ファイル変更時の自動リロードを有効化（開発時便利）
+runOnSave = true
