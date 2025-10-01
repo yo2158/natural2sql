@@ -2,18 +2,18 @@
 テストデータ生成システム 設定ファイル
 """
 
-# データ量設定（SQLite sample版）
+# データ量設定
 DATA_VOLUME = {
-    'members': 1000,
-    'restaurants': 200,
-    'reservations': 4000,
-    'access_logs': 25000,
-    'reviews': 400,
-    'favorites': 3000
+    'members': 100000,
+    'restaurants': 5000,
+    'reservations': 500000,
+    'access_logs': 2000000,
+    'reviews': 50000,
+    'favorites': 150000
 }
 
 # チャンク分割サイズ（大量データ生成時のメモリ最適化）
-CHUNK_SIZE = 10000  # sample版用に縮小
+CHUNK_SIZE = 100000
 
 # パレート法則の比率設定
 PARETO_RATIOS = {
@@ -87,9 +87,11 @@ NON_LOGIN_ACCESS_RATE = 0.3
 
 # 出力設定
 OUTPUT_CONFIG = {
-    'db_path': '../data/restaurant.db',  # SQLite DB出力先
+    'data_dir': 'data',
     'log_dir': 'logs',
-    'log_file': 'generate_data.log'
+    'log_file': 'generate_data.log',
+    'csv_encoding': 'utf-8',
+    'csv_index': False  # CSVにインデックス列を含めない
 }
 
 # ログレベル

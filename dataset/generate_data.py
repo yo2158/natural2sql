@@ -1,30 +1,30 @@
 #!/usr/bin/env python3
 """
-テストデータ生成スクリプト - Text-to-SQL Demo Dataset Generator
+テストデータ生成スクリプト - Text-to-SQL Demo Dataset Generator (SQLite版)
 
-飲食店予約サイトを模したテストデータを生成します。
+飲食店予約サイトを模したテストデータをSQLiteに直接生成します。
 """
 
 import logging
 import os
 import sys
+import sqlite3
 from datetime import datetime, timedelta
 from typing import List, Tuple
 import uuid
 import random
+from pathlib import Path
 
 import pandas as pd
 import numpy as np
 from faker import Faker
 from tqdm import tqdm
-import mysql.connector
-from mysql.connector import Error
 
 import config
 
 
-class DataGenerator:
-    """データ生成メインクラス"""
+class SQLiteDataGenerator:
+    """SQLiteデータ生成メインクラス"""
 
     def __init__(self):
         """初期化処理"""
@@ -35,17 +35,19 @@ class DataGenerator:
 
         self._setup_logging()
         self._create_directories()
+        self._init_database()
 
         # 生成済みデータの保持（外部キー参照用）
         self.member_ids: List[int] = []
         self.restaurant_ids: List[int] = []
         self.reservations: List[Tuple[int, int, int]] = []  # (reservation_id, member_id, restaurant_id)
 
-        self.logger.info("データ生成システム初期化完了")
+        self.logger.info("SQLiteデータ生成システム初期化完了")
 
     def _setup_logging(self):
         """ログ設定"""
         log_dir = config.OUTPUT_CONFIG['log_dir']
+        os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, config.OUTPUT_CONFIG['log_file'])
 
         logging.basicConfig(
@@ -60,35 +62,114 @@ class DataGenerator:
 
     def _create_directories(self):
         """出力ディレクトリ作成"""
-        os.makedirs(config.OUTPUT_CONFIG['data_dir'], exist_ok=True)
-        os.makedirs(config.OUTPUT_CONFIG['log_dir'], exist_ok=True)
+        db_path = Path(config.OUTPUT_CONFIG['db_path'])
+        db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def _get_output_path(self, filename: str) -> str:
-        """CSV出力パス取得"""
-        return os.path.join(config.OUTPUT_CONFIG['data_dir'], filename)
+    def _init_database(self):
+        """SQLite データベース初期化"""
+        db_path = config.OUTPUT_CONFIG['db_path']
 
-    def generate_members(self) -> pd.DataFrame:
+        # 既存DBがあれば削除
+        if os.path.exists(db_path):
+            os.remove(db_path)
+            self.logger.info(f"既存DB削除: {db_path}")
+
+        self.conn = sqlite3.connect(db_path)
+        self.cursor = self.conn.cursor()
+
+        self._create_schema()
+        self.logger.info(f"SQLite DB初期化完了: {db_path}")
+
+    def _create_schema(self):
+        """テーブルスキーマ作成"""
+        schema_sql = """
+        -- 会員マスタ
+        CREATE TABLE members (
+            member_id INTEGER PRIMARY KEY,
+            postal_code TEXT,
+            gender TEXT,
+            age INTEGER,
+            registration_date TEXT
+        );
+
+        -- 飲食店マスタ
+        CREATE TABLE restaurants (
+            restaurant_id INTEGER PRIMARY KEY,
+            name TEXT,
+            genre TEXT,
+            postal_code TEXT,
+            registration_date TEXT
+        );
+
+        -- 予約データ
+        CREATE TABLE reservations (
+            reservation_id INTEGER PRIMARY KEY,
+            member_id INTEGER,
+            restaurant_id INTEGER,
+            reservation_date TEXT,
+            visit_date TEXT
+        );
+
+        -- アクセスログ
+        CREATE TABLE access_logs (
+            session_id TEXT PRIMARY KEY,
+            member_id INTEGER,
+            restaurant_id INTEGER,
+            access_date TEXT
+        );
+
+        -- レビュー
+        CREATE TABLE reviews (
+            review_id INTEGER PRIMARY KEY,
+            member_id INTEGER,
+            restaurant_id INTEGER,
+            rating INTEGER,
+            post_date TEXT
+        );
+
+        -- お気に入り
+        CREATE TABLE favorites (
+            member_id INTEGER,
+            restaurant_id INTEGER,
+            registration_date TEXT,
+            PRIMARY KEY (member_id, restaurant_id)
+        );
+
+        -- クエリ履歴（システムテーブル）
+        CREATE TABLE query_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            input_text TEXT,
+            generated_sql TEXT,
+            success INTEGER,
+            error_message TEXT,
+            row_count INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- インデックス作成
+        CREATE INDEX idx_member_res ON reservations(member_id);
+        CREATE INDEX idx_restaurant_res ON reservations(restaurant_id);
+        CREATE INDEX idx_access_date ON access_logs(access_date);
+        CREATE INDEX idx_review_restaurant ON reviews(restaurant_id);
+        CREATE INDEX idx_favorite_restaurant ON favorites(restaurant_id);
         """
-        会員マスタ生成
 
-        Returns:
-            members DataFrame
-        """
+        self.cursor.executescript(schema_sql)
+        self.conn.commit()
+        self.logger.info("テーブルスキーマ作成完了")
+
+    def generate_members(self):
+        """会員マスタ生成"""
         self.logger.info(f"会員データ生成開始: {config.DATA_VOLUME['members']}件")
         start_time = datetime.now()
 
         count = config.DATA_VOLUME['members']
 
-        # member_id（連番）
+        # データ生成
         member_ids = list(range(1, count + 1))
-
-        # postal_code（日本の郵便番号形式）
         postal_codes = [self.faker.postcode() for _ in tqdm(range(count), desc="郵便番号生成")]
-
-        # gender（M/F）
         genders = np.random.choice(['M', 'F'], size=count)
 
-        # age（18-80、正規分布）
         ages = np.random.normal(
             config.DISTRIBUTION_CONFIG['age_mean'],
             config.DISTRIBUTION_CONFIG['age_std'],
@@ -97,70 +178,51 @@ class DataGenerator:
         ages = np.clip(ages, config.DISTRIBUTION_CONFIG['age_min'], config.DISTRIBUTION_CONFIG['age_max'])
         ages = ages.astype(int)
 
-        # registration_date（過去10年以内）
         now = datetime.now()
         years_ago = config.DATE_RANGES['members_registration_years']
         start_date = now - timedelta(days=years_ago * 365)
 
         registration_dates = [
-            self.faker.date_time_between(start_date=start_date, end_date=now)
+            self.faker.date_time_between(start_date=start_date, end_date=now).isoformat()
             for _ in tqdm(range(count), desc="登録日生成")
         ]
 
-        df = pd.DataFrame({
-            'member_id': member_ids,
-            'postal_code': postal_codes,
-            'gender': genders,
-            'age': ages,
-            'registration_date': registration_dates
-        })
+        # SQLite挿入
+        data = list(zip(member_ids, postal_codes, genders, ages, registration_dates))
+        self.cursor.executemany(
+            "INSERT INTO members VALUES (?, ?, ?, ?, ?)",
+            data
+        )
+        self.conn.commit()
 
-        # CSV出力
-        output_path = self._get_output_path('members.csv')
-        df.to_csv(output_path, index=config.OUTPUT_CONFIG['csv_index'], encoding=config.OUTPUT_CONFIG['csv_encoding'])
-
-        # member_ids保存（後続処理で使用）
         self.member_ids = member_ids
 
         elapsed = (datetime.now() - start_time).total_seconds()
-        self.logger.info(f"会員データ生成完了: {len(df)}件 ({elapsed:.2f}秒)")
+        self.logger.info(f"会員データ生成完了: {count}件 ({elapsed:.2f}秒)")
 
-        return df
-
-    def generate_restaurants(self) -> pd.DataFrame:
-        """
-        飲食店マスタ生成
-
-        Returns:
-            restaurants DataFrame
-        """
+    def generate_restaurants(self):
+        """飲食店マスタ生成"""
         self.logger.info(f"飲食店データ生成開始: {config.DATA_VOLUME['restaurants']}件")
         start_time = datetime.now()
 
         count = config.DATA_VOLUME['restaurants']
 
-        # restaurant_id（連番）
+        # データ生成
         restaurant_ids = list(range(1, count + 1))
 
-        # name（店名）- 飲食店らしい名前生成
         def generate_restaurant_name():
             patterns = [
-                lambda: f"{self.faker.last_name()}{random.choice(['亭', '屋', '家', '処', '庵'])}",  # 45%
-                lambda: f"{random.choice(['居酒屋', 'レストラン', 'カフェ', 'ダイニング', 'バル'])}{self.faker.last_name()}",  # 35%
-                lambda: f"{self.faker.last_name()}{random.choice(['台所', '食卓', 'キッチン', '厨房'])}",  # 20%
+                lambda: f"{self.faker.last_name()}{random.choice(['亭', '屋', '家', '処', '庵'])}",
+                lambda: f"{random.choice(['居酒屋', 'レストラン', 'カフェ', 'ダイニング', 'バル'])}{self.faker.last_name()}",
+                lambda: f"{self.faker.last_name()}{random.choice(['台所', '食卓', 'キッチン', '厨房'])}",
             ]
             pattern = random.choices(patterns, weights=[45, 35, 20])[0]
             return pattern()
 
         names = [generate_restaurant_name() for _ in tqdm(range(count), desc="店名生成")]
-
-        # genre（ジャンル）
         genres = np.random.choice(config.RESTAURANT_GENRES, size=count)
-
-        # postal_code
         postal_codes = [self.faker.postcode() for _ in tqdm(range(count), desc="郵便番号生成")]
 
-        # registration_date（過去10年～1年前）
         now = datetime.now()
         years_ago = config.DATE_RANGES['restaurants_registration_years']
         min_years_ago = config.DATE_RANGES['restaurants_min_years_ago']
@@ -168,37 +230,25 @@ class DataGenerator:
         end_date = now - timedelta(days=min_years_ago * 365)
 
         registration_dates = [
-            self.faker.date_time_between(start_date=start_date, end_date=end_date)
+            self.faker.date_time_between(start_date=start_date, end_date=end_date).isoformat()
             for _ in tqdm(range(count), desc="登録日生成")
         ]
 
-        df = pd.DataFrame({
-            'restaurant_id': restaurant_ids,
-            'name': names,
-            'genre': genres,
-            'postal_code': postal_codes,
-            'registration_date': registration_dates
-        })
+        # SQLite挿入
+        data = list(zip(restaurant_ids, names, genres, postal_codes, registration_dates))
+        self.cursor.executemany(
+            "INSERT INTO restaurants VALUES (?, ?, ?, ?, ?)",
+            data
+        )
+        self.conn.commit()
 
-        # CSV出力
-        output_path = self._get_output_path('restaurants.csv')
-        df.to_csv(output_path, index=config.OUTPUT_CONFIG['csv_index'], encoding=config.OUTPUT_CONFIG['csv_encoding'])
-
-        # restaurant_ids保存
         self.restaurant_ids = restaurant_ids
 
         elapsed = (datetime.now() - start_time).total_seconds()
-        self.logger.info(f"飲食店データ生成完了: {len(df)}件 ({elapsed:.2f}秒)")
+        self.logger.info(f"飲食店データ生成完了: {count}件 ({elapsed:.2f}秒)")
 
-        return df
-
-    def generate_reservations(self) -> pd.DataFrame:
-        """
-        予約データ生成（パレート分布適用）
-
-        Returns:
-            reservations DataFrame
-        """
+    def generate_reservations(self):
+        """予約データ生成（パレート分布適用）"""
         self.logger.info(f"予約データ生成開始: {config.DATA_VOLUME['reservations']}件")
         start_time = datetime.now()
 
@@ -206,101 +256,66 @@ class DataGenerator:
 
         # パレート分布設定
         member_active_count = int(len(self.member_ids) * config.PARETO_RATIOS['member_active_ratio'])
-        member_active_reservations = int(count * config.PARETO_RATIOS['member_reservation_ratio'])
-
         restaurant_popular_count = int(len(self.restaurant_ids) * config.PARETO_RATIOS['restaurant_popular_ratio'])
-        restaurant_popular_reservations = int(count * config.PARETO_RATIOS['restaurant_reservation_ratio'])
 
-        self.logger.info(f"パレート分布: 上位{member_active_count}会員が{member_active_reservations}予約")
-        self.logger.info(f"パレート分布: 上位{restaurant_popular_count}店舗が{restaurant_popular_reservations}予約")
+        self.logger.info(f"パレート分布: 上位{member_active_count}会員、上位{restaurant_popular_count}店舗に偏重")
 
-        # 会員の重み付け（上位20%に高い重み）
+        # 重み付け
         member_weights = [10.0 if i < member_active_count else 1.0 for i in range(len(self.member_ids))]
-        member_weights = np.array(member_weights)
-        member_weights = member_weights / member_weights.sum()
+        member_weights = np.array(member_weights) / np.sum(member_weights)
 
-        # 店舗の重み付け（上位10%に高い重み）
         restaurant_weights = [20.0 if i < restaurant_popular_count else 1.0 for i in range(len(self.restaurant_ids))]
-        restaurant_weights = np.array(restaurant_weights)
-        restaurant_weights = restaurant_weights / restaurant_weights.sum()
+        restaurant_weights = np.array(restaurant_weights) / np.sum(restaurant_weights)
 
-        # reservation_id（連番）
+        # データ生成
         reservation_ids = list(range(1, count + 1))
+        member_ids_selected = np.random.choice(self.member_ids, size=count, p=member_weights)
+        restaurant_ids_selected = np.random.choice(self.restaurant_ids, size=count, p=restaurant_weights)
 
-        # member_id（重み付けランダム選択）
-        member_ids_selected = np.random.choice(
-            self.member_ids,
-            size=count,
-            p=member_weights
-        )
-
-        # restaurant_id（重み付けランダム選択）
-        restaurant_ids_selected = np.random.choice(
-            self.restaurant_ids,
-            size=count,
-            p=restaurant_weights
-        )
-
-        # reservation_date（過去10年以内）
         now = datetime.now()
         years_ago = config.DATE_RANGES['reservations_years']
         start_date = now - timedelta(days=years_ago * 365)
 
         reservation_dates = [
-            self.faker.date_time_between(start_date=start_date, end_date=now)
+            self.faker.date_time_between(start_date=start_date, end_date=now).isoformat()
             for _ in tqdm(range(count), desc="予約日生成")
         ]
 
-        # visit_date（reservation_date以降、10%はNULL=キャンセル）
+        # visit_date（10%はNULL=キャンセル）
         visit_dates = []
         cancellation_rate = config.CANCELLATION_RATE
 
-        for res_date in tqdm(reservation_dates, desc="来店日生成"):
+        for res_date_str in tqdm(reservation_dates, desc="来店日生成"):
             if random.random() < cancellation_rate:
-                visit_dates.append(None)  # キャンセル
+                visit_dates.append(None)
             else:
-                # 予約日から30日以内の来店日
+                res_date = datetime.fromisoformat(res_date_str)
                 days_ahead = random.randint(0, 30)
                 visit_date = res_date + timedelta(days=days_ahead)
-                visit_dates.append(visit_date)
+                visit_dates.append(visit_date.isoformat())
 
-        df = pd.DataFrame({
-            'reservation_id': reservation_ids,
-            'member_id': member_ids_selected,
-            'restaurant_id': restaurant_ids_selected,
-            'reservation_date': reservation_dates,
-            'visit_date': visit_dates
-        })
+        # SQLite挿入
+        data = list(zip(reservation_ids, member_ids_selected, restaurant_ids_selected, reservation_dates, visit_dates))
+        self.cursor.executemany(
+            "INSERT INTO reservations VALUES (?, ?, ?, ?, ?)",
+            data
+        )
+        self.conn.commit()
 
-        # CSV出力
-        output_path = self._get_output_path('reservations.csv')
-        df.to_csv(output_path, index=config.OUTPUT_CONFIG['csv_index'], encoding=config.OUTPUT_CONFIG['csv_encoding'])
-
-        # reservations保存（reviews生成で使用）
         self.reservations = list(zip(reservation_ids, member_ids_selected, restaurant_ids_selected))
 
         elapsed = (datetime.now() - start_time).total_seconds()
-        self.logger.info(f"予約データ生成完了: {len(df)}件 ({elapsed:.2f}秒)")
+        self.logger.info(f"予約データ生成完了: {count}件 ({elapsed:.2f}秒)")
 
-        return df
-
-    def generate_access_logs(self) -> pd.DataFrame:
-        """
-        アクセスログ生成（チャンク分割）
-
-        Returns:
-            access_logs DataFrame（最終チャンク）
-        """
-        self.logger.info(f"アクセスログ生成開始: {config.DATA_VOLUME['access_logs']}件（チャンク分割）")
+    def generate_access_logs(self):
+        """アクセスログ生成（チャンク分割）"""
+        self.logger.info(f"アクセスログ生成開始: {config.DATA_VOLUME['access_logs']}件")
         total_start = datetime.now()
 
         total_count = config.DATA_VOLUME['access_logs']
         chunk_size = config.CHUNK_SIZE
         num_chunks = (total_count + chunk_size - 1) // chunk_size
 
-        output_path = self._get_output_path('access_logs.csv')
-
-        # 日付範囲
         now = datetime.now()
         months_ago = config.DATE_RANGES['access_logs_months']
         start_date = now - timedelta(days=months_ago * 30)
@@ -311,10 +326,9 @@ class DataGenerator:
 
             self.logger.info(f"チャンク {chunk_idx + 1}/{num_chunks} 生成中 ({current_chunk_size}件)")
 
-            # session_id（UUID v4）
+            # データ生成
             session_ids = [str(uuid.uuid4()) for _ in range(current_chunk_size)]
 
-            # member_id（30%はNULL=非ログイン）
             non_login_rate = config.NON_LOGIN_ACCESS_RATE
             member_ids_chunk = []
             for _ in range(current_chunk_size):
@@ -323,32 +337,20 @@ class DataGenerator:
                 else:
                     member_ids_chunk.append(random.choice(self.member_ids))
 
-            # restaurant_id（ランダム選択）
             restaurant_ids_chunk = np.random.choice(self.restaurant_ids, size=current_chunk_size)
 
-            # access_date（過去6ヶ月以内）
             access_dates = [
-                self.faker.date_time_between(start_date=start_date, end_date=now)
+                self.faker.date_time_between(start_date=start_date, end_date=now).isoformat()
                 for _ in range(current_chunk_size)
             ]
 
-            chunk_df = pd.DataFrame({
-                'session_id': session_ids,
-                'member_id': member_ids_chunk,
-                'restaurant_id': restaurant_ids_chunk,
-                'access_date': access_dates
-            })
-
-            # CSV出力（追記モード）
-            mode = 'w' if chunk_idx == 0 else 'a'
-            header = (chunk_idx == 0)
-            chunk_df.to_csv(
-                output_path,
-                mode=mode,
-                header=header,
-                index=config.OUTPUT_CONFIG['csv_index'],
-                encoding=config.OUTPUT_CONFIG['csv_encoding']
+            # SQLite挿入
+            data = list(zip(session_ids, member_ids_chunk, restaurant_ids_chunk, access_dates))
+            self.cursor.executemany(
+                "INSERT INTO access_logs VALUES (?, ?, ?, ?)",
+                data
             )
+            self.conn.commit()
 
             chunk_elapsed = (datetime.now() - chunk_start).total_seconds()
             self.logger.info(f"チャンク {chunk_idx + 1} 完了 ({chunk_elapsed:.2f}秒)")
@@ -356,31 +358,20 @@ class DataGenerator:
         total_elapsed = (datetime.now() - total_start).total_seconds()
         self.logger.info(f"アクセスログ生成完了: {total_count}件 ({total_elapsed:.2f}秒)")
 
-        return chunk_df  # 最終チャンクを返す
-
-    def generate_reviews(self) -> pd.DataFrame:
-        """
-        レビューデータ生成（予約の10%）
-
-        Returns:
-            reviews DataFrame
-        """
+    def generate_reviews(self):
+        """レビューデータ生成"""
         self.logger.info(f"レビューデータ生成開始: {config.DATA_VOLUME['reviews']}件")
         start_time = datetime.now()
 
         count = config.DATA_VOLUME['reviews']
 
-        # reservationsから10%サンプリング
+        # reservationsからサンプリング
         sampled_reservations = random.sample(self.reservations, count)
 
-        # review_id（連番）
         review_ids = list(range(1, count + 1))
-
-        # member_id, restaurant_id（reservationsから取得）
         member_ids = [res[1] for res in sampled_reservations]
         restaurant_ids = [res[2] for res in sampled_reservations]
 
-        # rating（1-5、正規分布で平均3.5）
         ratings = np.random.normal(
             config.DISTRIBUTION_CONFIG['rating_mean'],
             config.DISTRIBUTION_CONFIG['rating_std'],
@@ -389,40 +380,28 @@ class DataGenerator:
         ratings = np.clip(ratings, config.DISTRIBUTION_CONFIG['rating_min'], config.DISTRIBUTION_CONFIG['rating_max'])
         ratings = np.round(ratings).astype(int)
 
-        # post_date（過去5年以内）
         now = datetime.now()
         years_ago = config.DATE_RANGES['reviews_years']
         start_date = now - timedelta(days=years_ago * 365)
 
         post_dates = [
-            self.faker.date_time_between(start_date=start_date, end_date=now)
+            self.faker.date_time_between(start_date=start_date, end_date=now).isoformat()
             for _ in tqdm(range(count), desc="投稿日生成")
         ]
 
-        df = pd.DataFrame({
-            'review_id': review_ids,
-            'member_id': member_ids,
-            'restaurant_id': restaurant_ids,
-            'rating': ratings,
-            'post_date': post_dates
-        })
-
-        # CSV出力
-        output_path = self._get_output_path('reviews.csv')
-        df.to_csv(output_path, index=config.OUTPUT_CONFIG['csv_index'], encoding=config.OUTPUT_CONFIG['csv_encoding'])
+        # SQLite挿入
+        data = list(zip(review_ids, member_ids, restaurant_ids, ratings, post_dates))
+        self.cursor.executemany(
+            "INSERT INTO reviews VALUES (?, ?, ?, ?, ?)",
+            data
+        )
+        self.conn.commit()
 
         elapsed = (datetime.now() - start_time).total_seconds()
-        self.logger.info(f"レビューデータ生成完了: {len(df)}件 ({elapsed:.2f}秒)")
+        self.logger.info(f"レビューデータ生成完了: {count}件 ({elapsed:.2f}秒)")
 
-        return df
-
-    def generate_favorites(self) -> pd.DataFrame:
-        """
-        お気に入り登録データ生成（30%が予約に繋がる設計）
-
-        Returns:
-            favorites DataFrame
-        """
+    def generate_favorites(self):
+        """お気に入り登録データ生成"""
         self.logger.info(f"お気に入りデータ生成開始: {config.DATA_VOLUME['favorites']}件")
         start_time = datetime.now()
 
@@ -431,15 +410,21 @@ class DataGenerator:
 
         self.logger.info(f"お気に入り→予約転換: {favorite_to_reservation_count}件 / {count}件")
 
-        # 30%はreservationsから取得
-        favorites_from_reservations = random.sample(self.reservations, favorite_to_reservation_count)
-        favorites_pairs = [(res[1], res[2]) for res in favorites_from_reservations]  # (member_id, restaurant_id)
+        # 30%はreservationsから（重複除外）
+        favorites_from_reservations = random.sample(self.reservations, min(favorite_to_reservation_count, len(self.reservations)))
+        favorites_pairs_set = set()
+        for res in favorites_from_reservations:
+            pair = (res[1], res[2])  # (member_id, restaurant_id)
+            favorites_pairs_set.add(pair)
 
-        # 残り70%はランダム生成（重複チェック）
-        remaining_count = count - favorite_to_reservation_count
+        favorites_pairs = list(favorites_pairs_set)
+
+        # 残り70%はランダム生成（重複回避）
         existing_pairs = set(favorites_pairs)
+        max_attempts = count * 10  # 無限ループ防止
+        attempts = 0
 
-        while len(favorites_pairs) < count:
+        while len(favorites_pairs) < count and attempts < max_attempts:
             member_id = random.choice(self.member_ids)
             restaurant_id = random.choice(self.restaurant_ids)
             pair = (member_id, restaurant_id)
@@ -447,186 +432,98 @@ class DataGenerator:
             if pair not in existing_pairs:
                 favorites_pairs.append(pair)
                 existing_pairs.add(pair)
+            attempts += 1
 
-        # member_id, restaurant_id分離
+        if len(favorites_pairs) < count:
+            self.logger.warning(f"お気に入り生成: 目標{count}件に対し{len(favorites_pairs)}件生成（重複回避制限）")
+
         member_ids = [pair[0] for pair in favorites_pairs]
         restaurant_ids = [pair[1] for pair in favorites_pairs]
 
-        # registration_date（過去5年以内）
         now = datetime.now()
         years_ago = config.DATE_RANGES['favorites_years']
         start_date = now - timedelta(days=years_ago * 365)
 
         registration_dates = [
-            self.faker.date_time_between(start_date=start_date, end_date=now)
+            self.faker.date_time_between(start_date=start_date, end_date=now).isoformat()
             for _ in tqdm(range(count), desc="登録日生成")
         ]
 
-        df = pd.DataFrame({
-            'member_id': member_ids,
-            'restaurant_id': restaurant_ids,
-            'registration_date': registration_dates
-        })
-
-        # CSV出力
-        output_path = self._get_output_path('favorites.csv')
-        df.to_csv(output_path, index=config.OUTPUT_CONFIG['csv_index'], encoding=config.OUTPUT_CONFIG['csv_encoding'])
+        # SQLite挿入
+        data = list(zip(member_ids, restaurant_ids, registration_dates))
+        self.cursor.executemany(
+            "INSERT INTO favorites VALUES (?, ?, ?)",
+            data
+        )
+        self.conn.commit()
 
         elapsed = (datetime.now() - start_time).total_seconds()
-        self.logger.info(f"お気に入りデータ生成完了: {len(df)}件 ({elapsed:.2f}秒)")
+        self.logger.info(f"お気に入りデータ生成完了: {count}件 ({elapsed:.2f}秒)")
 
-        return df
-
-    def import_to_mysql(self):
-        """MySQLへのデータインポート"""
-        self.logger.info("=" * 60)
-        self.logger.info("MySQLインポート開始")
-        self.logger.info("=" * 60)
-        start_time = datetime.now()
-
-        connection = None
-
-        try:
-            # MySQL接続
-            self.logger.info("MySQL接続中...")
-            connection = mysql.connector.connect(
-                host=config.MYSQL_CONFIG['host'],
-                port=config.MYSQL_CONFIG['port'],
-                user=config.MYSQL_CONFIG['user'],
-                password=config.MYSQL_CONFIG['password'],
-                database=config.MYSQL_CONFIG['database'],
-                allow_local_infile=True  # LOAD DATA LOCAL INFILE有効化
-            )
-
-            if connection.is_connected():
-                self.logger.info("MySQL接続成功")
-                cursor = connection.cursor()
-
-                # CREATE TABLE実行
-                self.logger.info("CREATE TABLE実行中...")
-                with open('import.sql', 'r', encoding='utf-8') as f:
-                    sql_script = f.read()
-
-                # 複数のSQL文を分割して実行
-                for statement in sql_script.split(';'):
-                    statement = statement.strip()
-                    if statement:
-                        cursor.execute(statement)
-
-                connection.commit()
-                self.logger.info("CREATE TABLE完了")
-
-                # CSVインポート（LOAD DATA LOCAL INFILE）
-                tables = [
-                    ('members', 'members.csv'),
-                    ('restaurants', 'restaurants.csv'),
-                    ('reservations', 'reservations.csv'),
-                    ('access_logs', 'access_logs.csv'),
-                    ('reviews', 'reviews.csv'),
-                    ('favorites', 'favorites.csv')
-                ]
-
-                for table_name, csv_file in tables:
-                    self.logger.info(f"{table_name} インポート中...")
-                    csv_path = self._get_output_path(csv_file)
-                    abs_csv_path = os.path.abspath(csv_path)
-
-                    load_sql = f"""
-                    LOAD DATA LOCAL INFILE '{abs_csv_path}'
-                    INTO TABLE {table_name}
-                    FIELDS TERMINATED BY ','
-                    ENCLOSED BY '\"'
-                    LINES TERMINATED BY '\\n'
-                    IGNORE 1 ROWS
-                    """
-
-                    try:
-                        cursor.execute(load_sql)
-                        connection.commit()
-                        row_count = cursor.rowcount
-                        self.logger.info(f"{table_name} インポート完了: {row_count}件")
-                    except Error as e:
-                        self.logger.warning(f"{table_name} LOAD DATA INFILE失敗（fallback処理へ）: {e}")
-                        # Fallback: pandasでCSVを読んでINSERT
-                        self._import_csv_fallback(cursor, connection, table_name, csv_path)
-
-                cursor.close()
-
-                elapsed = (datetime.now() - start_time).total_seconds()
-                self.logger.info("=" * 60)
-                self.logger.info(f"MySQLインポート完了 ({elapsed:.2f}秒)")
-                self.logger.info("=" * 60)
-
-        except Error as e:
-            self.logger.error(f"MySQLエラー: {e}", exc_info=True)
-            raise
-
-        finally:
-            if connection and connection.is_connected():
-                connection.close()
-                self.logger.info("MySQL接続クローズ")
-
-    def _import_csv_fallback(self, cursor, connection, table_name: str, csv_path: str):
-        """CSVインポートのfallback処理（INSERT文使用）"""
-        self.logger.info(f"{table_name} fallback処理（INSERT）開始...")
-
-        df = pd.read_csv(csv_path)
-        columns = ','.join(df.columns)
-        placeholders = ','.join(['%s'] * len(df.columns))
-        insert_sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
-
-        # バッチインサート（1000件ずつ）
-        batch_size = 1000
-        for i in range(0, len(df), batch_size):
-            batch = df.iloc[i:i+batch_size]
-            data = [tuple(row) for row in batch.values]
-            cursor.executemany(insert_sql, data)
-            connection.commit()
-
-        self.logger.info(f"{table_name} fallback処理完了: {len(df)}件")
-
-    def run(self, skip_csv_generation=False):
+    def run(self):
         """メイン実行処理"""
         self.logger.info("=" * 60)
-        self.logger.info("テストデータ生成開始")
+        self.logger.info("SQLiteテストデータ生成開始")
         self.logger.info("=" * 60)
         total_start = datetime.now()
 
         try:
-            if not skip_csv_generation:
-                # Phase 1: マスタデータ生成
-                self.logger.info("Phase 1: マスタデータ生成")
-                self.generate_members()
-                self.generate_restaurants()
+            # Phase 1: マスタデータ生成
+            self.logger.info("Phase 1: マスタデータ生成")
+            self.generate_members()
+            self.generate_restaurants()
 
-                # Phase 2: トランザクションデータ生成
-                self.logger.info("Phase 2: トランザクションデータ生成")
-                self.generate_reservations()
-                self.generate_access_logs()
-                self.generate_reviews()
-                self.generate_favorites()
+            # Phase 2: トランザクションデータ生成
+            self.logger.info("Phase 2: トランザクションデータ生成")
+            self.generate_reservations()
+            self.generate_access_logs()
+            self.generate_reviews()
+            self.generate_favorites()
 
-                total_elapsed = (datetime.now() - total_start).total_seconds()
-                self.logger.info("=" * 60)
-                self.logger.info(f"全データ生成完了 (総時間: {total_elapsed:.2f}秒)")
-                self.logger.info("=" * 60)
-            else:
-                self.logger.info("CSV生成スキップ（既存ファイル使用）")
+            total_elapsed = (datetime.now() - total_start).total_seconds()
 
-            # Phase 3: MySQLインポート
-            self.import_to_mysql()
+            # DB統計情報
+            self.cursor.execute("SELECT COUNT(*) FROM members")
+            members_count = self.cursor.fetchone()[0]
+            self.cursor.execute("SELECT COUNT(*) FROM restaurants")
+            restaurants_count = self.cursor.fetchone()[0]
+            self.cursor.execute("SELECT COUNT(*) FROM reservations")
+            reservations_count = self.cursor.fetchone()[0]
+            self.cursor.execute("SELECT COUNT(*) FROM access_logs")
+            access_logs_count = self.cursor.fetchone()[0]
+            self.cursor.execute("SELECT COUNT(*) FROM reviews")
+            reviews_count = self.cursor.fetchone()[0]
+            self.cursor.execute("SELECT COUNT(*) FROM favorites")
+            favorites_count = self.cursor.fetchone()[0]
+
+            total_records = (members_count + restaurants_count + reservations_count +
+                           access_logs_count + reviews_count + favorites_count)
+
+            self.logger.info("=" * 60)
+            self.logger.info(f"全データ生成完了 (総時間: {total_elapsed:.2f}秒)")
+            self.logger.info(f"総レコード数: {total_records:,}件")
+            self.logger.info("=" * 60)
+
+            # DBファイルサイズ確認
+            db_path = Path(config.OUTPUT_CONFIG['db_path'])
+            if db_path.exists():
+                size_mb = db_path.stat().st_size / 1024 / 1024
+                self.logger.info(f"DBサイズ: {size_mb:.2f}MB")
 
         except Exception as e:
             self.logger.error(f"処理中にエラーが発生: {e}", exc_info=True)
             raise
 
+        finally:
+            if self.conn:
+                self.conn.close()
+                self.logger.info("SQLite接続クローズ")
+
 
 def main():
     """エントリーポイント"""
-    import sys
-    skip_csv = '--skip-csv' in sys.argv
-    generator = DataGenerator()
-    generator.run(skip_csv_generation=skip_csv)
+    generator = SQLiteDataGenerator()
+    generator.run()
 
 
 if __name__ == '__main__':
