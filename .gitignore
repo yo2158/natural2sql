@@ -45,6 +45,10 @@ env/
 *.swo
 *~
 
+# Claude Code
+.claude/
+.memory-keeper/
+
 # OS
 .DS_Store
 Thumbs.db
