@@ -168,7 +168,7 @@ class SQLiteDataGenerator:
         # データ生成
         member_ids = list(range(1, count + 1))
         postal_codes = [self.faker.postcode() for _ in tqdm(range(count), desc="郵便番号生成")]
-        genders = np.random.choice(['M', 'F'], size=count)
+        genders = np.random.choice(['M', 'F'], size=count).tolist()
 
         ages = np.random.normal(
             config.DISTRIBUTION_CONFIG['age_mean'],
@@ -176,7 +176,7 @@ class SQLiteDataGenerator:
             count
         )
         ages = np.clip(ages, config.DISTRIBUTION_CONFIG['age_min'], config.DISTRIBUTION_CONFIG['age_max'])
-        ages = ages.astype(int)
+        ages = ages.astype(int).tolist()
 
         now = datetime.now()
         years_ago = config.DATE_RANGES['members_registration_years']
@@ -220,7 +220,7 @@ class SQLiteDataGenerator:
             return pattern()
 
         names = [generate_restaurant_name() for _ in tqdm(range(count), desc="店名生成")]
-        genres = np.random.choice(config.RESTAURANT_GENRES, size=count)
+        genres = np.random.choice(config.RESTAURANT_GENRES, size=count).tolist()
         postal_codes = [self.faker.postcode() for _ in tqdm(range(count), desc="郵便番号生成")]
 
         now = datetime.now()
@@ -269,8 +269,8 @@ class SQLiteDataGenerator:
 
         # データ生成
         reservation_ids = list(range(1, count + 1))
-        member_ids_selected = np.random.choice(self.member_ids, size=count, p=member_weights)
-        restaurant_ids_selected = np.random.choice(self.restaurant_ids, size=count, p=restaurant_weights)
+        member_ids_selected = np.random.choice(self.member_ids, size=count, p=member_weights).tolist()
+        restaurant_ids_selected = np.random.choice(self.restaurant_ids, size=count, p=restaurant_weights).tolist()
 
         now = datetime.now()
         years_ago = config.DATE_RANGES['reservations_years']
@@ -337,7 +337,7 @@ class SQLiteDataGenerator:
                 else:
                     member_ids_chunk.append(random.choice(self.member_ids))
 
-            restaurant_ids_chunk = np.random.choice(self.restaurant_ids, size=current_chunk_size)
+            restaurant_ids_chunk = np.random.choice(self.restaurant_ids, size=current_chunk_size).tolist()
 
             access_dates = [
                 self.faker.date_time_between(start_date=start_date, end_date=now).isoformat()
@@ -378,7 +378,7 @@ class SQLiteDataGenerator:
             count
         )
         ratings = np.clip(ratings, config.DISTRIBUTION_CONFIG['rating_min'], config.DISTRIBUTION_CONFIG['rating_max'])
-        ratings = np.round(ratings).astype(int)
+        ratings = np.round(ratings).astype(int).tolist()
 
         now = datetime.now()
         years_ago = config.DATE_RANGES['reviews_years']
