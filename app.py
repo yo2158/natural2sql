@@ -215,6 +215,8 @@ def main():
                         # Display executed SQL
                         with st.expander("実行されたSQL"):
                             st.code(result.get("sql_executed", sql), language="sql")
+
+                        st.info("SQLは誤りを含む場合があります。内容はご確認ください。")
                     else:
                         st.info("📊 結果: 0件")
 
