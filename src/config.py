@@ -11,7 +11,10 @@ import logging
 import sys
 
 # Load environment variables from .env file
-load_dotenv()
+# Explicitly specify .env path (project root)
+# .env file takes precedence over system environment variables
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=env_path, override=True)
 
 # Configure logging
 LOG_DIR = Path(__file__).parent.parent / "logs"
@@ -65,23 +68,22 @@ class Config:
             FileNotFoundError: If required files/directories don't exist
         """
         # Validate API key (at least one provider should be configured)
-        if not cls.GEMINI_API_KEY:
+        if not cls.GEMINI_API_KEY or cls.GEMINI_API_KEY == "your_gemini_api_key_here":
             raise ValueError(
-                "GEMINI_API_KEY is not set. "
-                "Please set it in .env file or environment variables. "
-                "Get your key from: https://makersuite.google.com/app/apikey"
+                "GEMINI_API_KEYが設定されていません。\n"
+                ".envファイルに設定してください。"
             )
 
         # Validate database path
         if not cls.DB_PATH.exists():
             raise FileNotFoundError(
-                f"Database file not found: {cls.DB_PATH}\n"
-                f"Expected location: {cls.DB_PATH.absolute()}"
+                f"データベースファイルが見つかりません: {cls.DB_PATH}\n"
+                f"期待される場所: {cls.DB_PATH.absolute()}"
             )
 
         # Validate data directory
         if not cls.DATA_DIR.exists():
             raise FileNotFoundError(
-                f"Data directory not found: {cls.DATA_DIR}\n"
-                f"Expected location: {cls.DATA_DIR.absolute()}"
+                f"dataディレクトリが見つかりません: {cls.DATA_DIR}\n"
+                f"期待される場所: {cls.DATA_DIR.absolute()}"
             )

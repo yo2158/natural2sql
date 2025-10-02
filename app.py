@@ -7,6 +7,7 @@ into SQL statements using AI (Gemini/Ollama) and executes them safely.
 
 import streamlit as st
 import pandas as pd
+import requests
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -25,6 +26,21 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+
+def check_ollama_available() -> bool:
+    """
+    Check if Ollama server is running.
+
+    Returns:
+        bool: True if Ollama is available, False otherwise
+    """
+    try:
+        ollama_url = Config.OLLAMA_HOST
+        response = requests.get(f"{ollama_url}/api/tags", timeout=3)
+        return response.status_code == 200
+    except Exception:
+        return False
 
 
 @st.cache_resource
@@ -60,16 +76,42 @@ def init_system() -> Dict[str, Any]:
     }
 
 
+def start_execution():
+    """Sets the execution flag in session state."""
+    st.session_state.is_executing = True
+
+
 def main():
     """Main application logic."""
+    # Initialize execution state
+    if "is_executing" not in st.session_state:
+        st.session_state.is_executing = False
+
     # Initialize system
-    sys = init_system()
+    try:
+        sys = init_system()
+    except (ValueError, FileNotFoundError) as e:
+        st.error(f"❌ 設定エラー\n\n{str(e)}")
+        st.stop()
+        return
 
     # Sidebar UI (Task 28)
     st.sidebar.header("⚙️ 設定")
 
+    # Check Ollama availability
+    ollama_available = check_ollama_available()
+
     # AI Provider selection
-    provider = st.sidebar.radio("AIプロバイダ", ["Gemini", "Ollama"], index=0)
+    if not ollama_available:
+        st.sidebar.radio(
+            "AIプロバイダ",
+            ["Gemini"],
+            index=0,
+            help="Ollama: サーバーが起動していません",
+        )
+        provider = "Gemini"
+    else:
+        provider = st.sidebar.radio("AIプロバイダ", ["Gemini", "Ollama"], index=0)
 
     # Model selection
     if provider == "Gemini":
@@ -84,7 +126,11 @@ def main():
         )
 
     # History display toggle
-    show_history = st.sidebar.checkbox("履歴表示", value=False)
+    show_history = st.sidebar.checkbox(
+        "履歴表示",
+        value=False,
+        help="このセッション中のクエリ履歴を表示（ブラウザを閉じると消去されます）",
+    )
 
     # Clear history button
     if st.sidebar.button("履歴クリア"):
@@ -116,13 +162,19 @@ def main():
     )
 
     # Execute button
-    execute_button = st.button("🚀 SQL生成・実行", type="primary")
+    st.button(
+        "🚀 SQL生成・実行",
+        type="primary",
+        on_click=start_execution,
+        disabled=st.session_state.is_executing or not user_input.strip(),
+    )
 
     # Execute query (Tasks 30-35)
-    if execute_button:
+    if st.session_state.is_executing:
         # Empty input check
         if not user_input.strip():
             st.error("❌ 質問を入力してください")
+            st.session_state.is_executing = False
             return
 
         # Create AI connector (Task 30)
@@ -137,6 +189,7 @@ def main():
                 )
         except Exception as e:
             st.error(f"❌ AI接続エラー: {str(e)}")
+            st.session_state.is_executing = False
             return
 
         # Retry loop (Task 33)
@@ -164,6 +217,7 @@ def main():
                         "invalid_question", parse_result.get("error_message", "")
                     )
                     st.error(error_result["display_message"])
+                    st.session_state.is_executing = False
                     return
 
                 # Extraction failed
@@ -181,6 +235,7 @@ def main():
                         continue
                     else:
                         st.error("❌ SQL抽出に失敗しました（リトライ上限）")
+                        st.session_state.is_executing = False
                         return
 
                 # SQL execution (Task 32)
@@ -212,10 +267,6 @@ def main():
                             mime="text/csv",
                         )
 
-                        # Display executed SQL
-                        with st.expander("実行されたSQL"):
-                            st.code(result.get("sql_executed", sql), language="sql")
-
                         st.info("SQLは誤りを含む場合があります。内容はご確認ください。")
                     else:
                         st.info("📊 結果: 0件")
@@ -235,7 +286,8 @@ def main():
                         },
                     )
 
-                    # Success - break retry loop
+                    # Success - reset state and break retry loop
+                    st.session_state.is_executing = False
                     break
 
                 else:
@@ -269,6 +321,7 @@ def main():
                             st.error(error_result["display_message"])
                             with st.expander("エラー詳細"):
                                 st.text(error_result["error_context"])
+                            st.session_state.is_executing = False
                             return
                     else:
                         # Max retries reached
@@ -276,10 +329,12 @@ def main():
                         st.error(result.get("error", "不明なエラー"))
                         with st.expander("実行されたSQL"):
                             st.code(sql, language="sql")
+                        st.session_state.is_executing = False
                         return
 
             except Exception as e:
                 st.error(f"❌ 予期しないエラー: {str(e)}")
+                st.session_state.is_executing = False
                 return
 
     # Display query history (Task 35)
