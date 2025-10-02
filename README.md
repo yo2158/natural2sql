@@ -1,4 +1,4 @@
-# txt2sql - AI-Powered Text-to-SQL Generator
+# natural2sql - AI-Powered Natural Language to SQL Generator
 
 **自然言語でデータベースクエリを実行できるStreamlitアプリケーション**
 
@@ -10,9 +10,9 @@
 
 ## 📖 このアプリでできること
 
-txt2sqlは、**自然言語からSQLを生成してデータベースを閲覧**できるWebアプリケーションです。
+natural2sqlは、**自然言語からSQLを生成してデータベースを閲覧**できるWebアプリケーションです。
 
-![txt2sql スクリーンショット](docs/images/txt2sql_img.jpg)
+![natural2sql スクリーンショット](docs/images/natural2sql_img.jpg)
 
 - 「30代の会員は何人？」→ 自動でSQLを生成して実行
 - 「評価4以上のイタリアンレストラン一覧」→ 結果を表形式で表示
@@ -93,8 +93,8 @@ pip3 --version
 ### ステップ2: リポジトリのクローン
 
 ```bash
-git clone https://github.com/yo2158/txt2sql.git
-cd txt2sql
+git clone https://github.com/yo2158/natural2sql.git
+cd natural2sql
 ```
 
 **確認**: `ls` を実行して `app.py` `requirements.txt` などが表示されればOK
@@ -196,7 +196,7 @@ You can now view your Streamlit app in your browser.
 
 **初回起動時**: メールアドレスの入力を求められることがあります。何も入力せずEnterキーを押せばスキップできます。
 
-**確認**: 画面に「🔍 txt2sql - Text-to-SQL Generator」と表示されればOK
+**確認**: 画面に「🔍 natural2sql - Natural Language to SQL Generator」と表示されればOK
 
 ---
 
@@ -366,7 +366,7 @@ pip install -r requirements.txt
 ## 📁 プロジェクト構造
 
 ```
-txt2sql/
+natural2sql/
 ├── app.py                    # メインアプリケーション
 ├── requirements.txt          # 依存パッケージリスト
 ├── .env.example              # 環境変数テンプレート
@@ -411,7 +411,7 @@ txt2sql/
 
 ## 📞 質問・不具合報告
 
-[Issues](https://github.com/yo2158/txt2sql/issues) まで
+[Issues](https://github.com/yo2158/natural2sql/issues) まで
 
 ---
 

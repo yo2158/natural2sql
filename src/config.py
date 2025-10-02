@@ -1,5 +1,5 @@
 """
-Configuration management module for txt2sql application.
+Configuration management module for natural2sql application.
 
 This module handles loading and validating environment variables and application settings.
 """
@@ -24,7 +24,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(LOG_DIR / 'smartquery.log'),
+        logging.FileHandler(LOG_DIR / 'natural2sql.log'),
         logging.StreamHandler(sys.stderr)
     ]
 )

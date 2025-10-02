@@ -1,5 +1,5 @@
 """
-txt2sql - Text-to-SQL Generator
+natural2sql - Natural Language to SQL Generator
 
 A Streamlit application that converts natural language queries
 into SQL statements using AI (Gemini/Ollama) and executes them safely.
@@ -21,7 +21,7 @@ from src.error_handler import ErrorHandler
 
 # Page configuration
 st.set_page_config(
-    page_title="txt2sql - Text to SQL",
+    page_title="natural2sql - Natural Language to SQL",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -139,7 +139,7 @@ def main():
             st.success("履歴をクリアしました")
 
     # Main area header and query input UI (Task 29)
-    st.title("🔍 txt2sql - Text-to-SQL Generator")
+    st.title("🔍 natural2sql - Natural Language to SQL Generator")
     st.markdown("自然言語でデータベースに問い合わせできます")
 
     # Sample query selection

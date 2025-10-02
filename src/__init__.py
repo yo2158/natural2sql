@@ -1,5 +1,5 @@
 """
-txt2sql - Text-to-SQL Generator
+natural2sql - Natural Language to SQL Generator
 
 A Streamlit application for generating and executing SQL queries from natural language.
 """

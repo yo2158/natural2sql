@@ -1,10 +1,10 @@
-# txt2sql データセット仕様書
+# natural2sql データセット仕様書
 
 **レストラン予約サービス - サンプルデータセット**
 
 ## 📊 概要
 
-このデータセットは、レストラン予約サービスのサンプルデータです。txt2sql Text-to-SQLアプリケーションのデモンストレーション用に設計されています。
+このデータセットは、レストラン予約サービスのサンプルデータです。natural2sql Natural Language to SQLアプリケーションのデモンストレーション用に設計されています。
 
 ### データベース情報
 
@@ -140,7 +140,7 @@
 
 ### 7. query_history（クエリ履歴 - システムテーブル）
 
-txt2sqlアプリケーションのクエリ実行履歴を保存。
+natural2sqlアプリケーションのクエリ実行履歴を保存。
 
 | カラム名 | データ型 | 説明 |
 |---------|---------|------|
@@ -253,7 +253,7 @@ cd dataset
 python3 generate_data.py
 ```
 
-生成されたデータベースは`/home/nao/project/txt2sql/data/restaurant.db`に保存されます。
+生成されたデータベースは`/home/nao/project/natural2sql/data/restaurant.db`に保存されます。
 
 ## 📝 注意事項
 
