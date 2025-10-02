@@ -289,11 +289,19 @@ brew install python@3.10
 ```
 
 **Windows**:
-- Python公式サイトから最新版（3.10以上）をダウンロードしてインストール
-- **【最重要】** インストーラー起動時、**`Add python.exe to PATH`** に必ずチェックを入れる
-- **`Install Now`** をクリック（pipも自動的にインストールされます）
-- インストール完了後、開いているコマンドプロンプト/PowerShellをすべて閉じて、新しく開く
-- 確認: `python --version` と `pip --version` でバージョンが表示されればOK
+1. [Python公式サイト](https://www.python.org/downloads/)から最新版（3.10以上）をダウンロード
+2. ダウンロードした `.exe` ファイルをダブルクリック
+3. **【最重要】** インストーラー起動時の最初の画面で、下部にある **`Add python.exe to PATH`** に必ずチェックを入れる
+   - ⚠️ このチェックを忘れると `python` コマンドが使えません
+4. **`Install Now`** をクリック（pipも自動的にインストールされます）
+5. 「Setup was successful」と表示されたら完了
+6. **インストール完了後、開いているコマンドプロンプト/PowerShellをすべて閉じて、新しく開く**
+7. 確認:
+   ```cmd
+   python --version
+   pip --version
+   ```
+   両方ともバージョンが表示されればOK
 
 ### pipがインストールされていない
 
@@ -305,7 +313,7 @@ sudo apt install python3-pip
 python3 -m ensurepip --upgrade
 ```
 
-**Windows**: Python公式インストーラーにpipが含まれています。
+**Windows**: Python公式インストーラーから入れたPythonには通常pipが含まれています。
 
 ### "No module named 'streamlit'" エラー
 
