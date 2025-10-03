@@ -25,15 +25,6 @@ PARETO_RATIOS = {
     'favorite_to_reservation_rate': 0.3   # お気に入りから予約への転換率（30%）
 }
 
-# MySQL接続情報
-MYSQL_CONFIG = {
-    'host': 'localhost',
-    'port': 3306,
-    'user': 'sandbox',
-    'password': 'sandboxpass',
-    'database': 'sandbox'
-}
-
 # レストランジャンルリスト
 RESTAURANT_GENRES = [
     '寿司・海鮮',
