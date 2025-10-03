@@ -12,12 +12,17 @@
 
 natural2sqlは、**自然言語からSQLを生成してデータベースを閲覧**できるWebアプリケーションです。
 
-![natural2sql スクリーンショット](docs/images/natural2sql_img.jpg)
+## 📹 動作デモ
+
+![natural2sql demo](docs/images/demo.gif)
+
+**実行例**: 「30代の会員は何人いますか？」→ SQL自動生成 → 実行結果表示
 
 - 「30代の会員は何人？」→ 自動でSQLを生成して実行
 - 「評価4以上のイタリアンレストラン一覧」→ 結果を表形式で表示
 - エラーが出ても自動で修正を試みます（最大3回）
 - 結果はCSVでダウンロード可能
+- **カスタムDB対応**: あなたのSQLite/MySQLデータベースに接続可能（詳細は[docs/CUSTOM_DATABASE.md](docs/CUSTOM_DATABASE.md)）
 
 ---
 
@@ -375,15 +380,28 @@ natural2sql/
 │
 ├── src/                      # ソースコード
 │   ├── config.py             # 設定管理
+│   ├── database_connector.py # DB接続抽象化
+│   ├── sqlite_connector.py   # SQLite接続
+│   ├── mysql_connector.py    # MySQL接続
+│   ├── logical_names_loader.py   # 論理名定義ローダー
+│   ├── business_terms_loader.py  # ビジネス用語ローダー
+│   ├── schema_viewer.py      # スキーマ表示
 │   ├── prompt_generator.py   # AI用プロンプト生成
 │   ├── ai_connector.py       # AI API接続
-│   ├── sql_executor.py       # SQL実行エンジン
 │   ├── sql_parser.py         # SQL抽出
+│   ├── sql_executor.py       # SQL実行（読み取り専用）
 │   └── error_handler.py      # エラー処理
+│
+├── config/                   # 設定ファイル（オプション）
+│   ├── logical_names_sample.csv      # 論理名定義サンプル
+│   └── business_terms_sample.jsonl   # ビジネス用語サンプル
 │
 ├── data/                     # データセット
 │   ├── restaurant.db         # SQLiteデータベース（4.6MB）
 │   └── README.md             # データセット説明
+│
+├── docs/                     # ドキュメント
+│   └── CUSTOM_DATABASE.md    # カスタムDB接続ガイド
 │
 └── dataset/                  # データ生成スクリプト
     ├── generate_data.py      # データベース生成
@@ -397,7 +415,7 @@ natural2sql/
 
 - **Python 3.10+**: プログラミング言語
 - **Streamlit**: UIフレームワーク
-- **SQLite**: データベース
+- **SQLite/MySQL**: データベース
 - **Google Gemini API**: AI（SQL生成）
 
 ---
@@ -415,5 +433,5 @@ natural2sql/
 
 ---
 
-**更新日**: 2025-10-01
-**バージョン**: 1.0.0
+**更新日**: 2025-10-03
+**バージョン**: 1.1.0

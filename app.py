@@ -8,15 +8,19 @@ into SQL statements using AI (Gemini/Ollama) and executes them safely.
 import streamlit as st
 import pandas as pd
 import requests
+import json
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple, List
 
 from src.config import Config
+from src.database_connector import create_database_connector
+from src.logical_names_loader import LogicalNamesLoader
+from src.business_terms_loader import BusinessTermsLoader
 from src.prompt_generator import PromptGenerator
 from src.ai_connector import create_ai_connector
 from src.sql_parser import SQLParser
-from src.sql_executor import SQLExecutor
 from src.error_handler import ErrorHandler
+from src.schema_viewer import SchemaViewer
 
 
 # Page configuration
@@ -43,35 +47,107 @@ def check_ollama_available() -> bool:
         return False
 
 
+def validate_config_on_startup() -> Tuple[Any, List[Dict[str, Any]], Optional[Dict[str, str]], Optional[List[Dict[str, str]]]]:
+    """
+    起動時設定検証とコンポーネント初期化
+
+    Returns:
+        Tuple containing:
+        - connector: DatabaseConnector instance
+        - schema: データベーススキーマ情報
+        - logical_names: 論理名マッピング（オプション）
+        - business_terms: ビジネス用語定義（オプション）
+
+    Raises:
+        ValueError: DB設定エラー
+        Exception: DB接続・スキーマ取得失敗
+    """
+    # Config validation
+    Config.validate()
+
+    # DB_TYPE確認
+    if Config.DB_TYPE not in ["sqlite", "mysql"]:
+        st.error(f"❌ 未対応のDB_TYPE: {Config.DB_TYPE}")
+        st.stop()
+
+    # DatabaseConnector作成
+    try:
+        connector = create_database_connector()
+    except ValueError as e:
+        st.error(f"❌ DB設定エラー: {e}")
+        st.stop()
+
+    # 接続テスト
+    try:
+        connector.connect()
+    except Exception as e:
+        st.error(f"❌ DB接続失敗: {e}")
+        st.stop()
+
+    # スキーマ取得
+    try:
+        schema = connector.get_schema()
+    except Exception as e:
+        st.error(f"❌ スキーマ取得失敗: {e}")
+        st.stop()
+
+    # 論理名ロード（オプション）
+    logical_names = None
+    if Config.LOGICAL_NAMES_PATH:
+        try:
+            path = Config.resolve_path(Config.LOGICAL_NAMES_PATH)
+            logical_names = LogicalNamesLoader.load(str(path))
+        except (FileNotFoundError, ValueError, UnicodeDecodeError) as e:
+            st.warning(f"⚠️ 論理名定義読み込み失敗: {e}。物理名のみで動作します。")
+
+    # ビジネス用語ロード（オプション）
+    business_terms = None
+    if Config.BUSINESS_TERMS_PATH:
+        try:
+            path = Config.resolve_path(Config.BUSINESS_TERMS_PATH)
+            business_terms = BusinessTermsLoader.load(str(path))
+            if business_terms and len(business_terms) > 200:
+                st.warning(f"⚠️ ビジネス用語は200件まで推奨（現在{len(business_terms)}件）")
+        except (FileNotFoundError, ValueError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            st.warning(f"⚠️ ビジネス用語定義読み込み失敗: {e}。用語なしで動作します。")
+
+    return connector, schema, logical_names, business_terms
+
+
 @st.cache_resource
-def init_system() -> Dict[str, Any]:
+def init_system():
     """
     Initialize system components with caching.
 
     Returns:
         Dictionary containing initialized components:
+        - connector: DatabaseConnector instance
+        - schema: データベーススキーマ情報
+        - logical_names: 論理名マッピング
+        - business_terms: ビジネス用語定義
         - prompt_gen: PromptGenerator instance
         - sql_parser: SQLParser instance
-        - sql_executor: SQLExecutor instance
         - error_handler: ErrorHandler instance
 
     Note:
         This function is cached by Streamlit to avoid re-initialization
         on every rerun. Config validation is performed here.
     """
-    # Validate configuration
-    Config.validate()
+    # 起動時検証とロード
+    connector, schema, logical_names, business_terms = validate_config_on_startup()
 
     # Initialize components
-    prompt_gen = PromptGenerator()
+    prompt_gen = PromptGenerator(schema, logical_names, business_terms)
     sql_parser = SQLParser()
-    sql_executor = SQLExecutor(str(Config.DB_PATH))
     error_handler = ErrorHandler()
 
     return {
+        "connector": connector,
+        "schema": schema,
+        "logical_names": logical_names,
+        "business_terms": business_terms,
         "prompt_gen": prompt_gen,
         "sql_parser": sql_parser,
-        "sql_executor": sql_executor,
         "error_handler": error_handler,
     }
 
@@ -95,7 +171,21 @@ def main():
         st.stop()
         return
 
-    # Sidebar UI (Task 28)
+    # Sidebar UI
+    # Schema viewer button (before settings)
+    if st.sidebar.button("📊 スキーマ一覧を表示"):
+        viewer = SchemaViewer(sys["schema"], sys["logical_names"])
+        viewer.show()
+
+    # DB connection info display
+    if Config.DB_TYPE == "sqlite":
+        db_info = f"**接続中:** SQLite (`{Config.DB_PATH.name}`)"
+    else:  # mysql
+        db_info = f"**接続中:** MySQL (`{Config.DB_NAME}`)"
+    st.sidebar.info(db_info)
+
+    st.sidebar.markdown("---")
+
     st.sidebar.header("⚙️ 設定")
 
     # Check Ollama availability
@@ -142,15 +232,22 @@ def main():
     st.title("🔍 natural2sql - Natural Language to SQL Generator")
     st.markdown("自然言語でデータベースに問い合わせできます")
 
-    # Sample query selection
-    sample_queries = [
-        "",
-        "30代の会員は何人いますか？",
-        "評価4以上のイタリアンレストランを表示",
-        "2025年1月に最も予約が多かった店舗TOP5",
-        "休眠会員（90日以上予約なし）は何人？",
-    ]
-    selected_sample = st.selectbox("サンプル選択（任意）", sample_queries, index=0)
+    # Sample query selection (only for sample DB)
+    is_sample_db = (
+        Config.DB_TYPE == "sqlite" and
+        Config.DB_PATH.name == "restaurant.db"
+    )
+
+    selected_sample = ""
+    if is_sample_db:
+        sample_queries = [
+            "",
+            "30代の会員は何人いますか？",
+            "評価4以上のイタリアンレストランを表示",
+            "2025年1月に最も予約が多かった店舗TOP5",
+            "休眠会員（90日以上予約なし）は何人？",
+        ]
+        selected_sample = st.selectbox("サンプル選択（任意）", sample_queries, index=0)
 
     # Text input area
     user_input = st.text_area(
@@ -238,99 +335,100 @@ def main():
                         st.session_state.is_executing = False
                         return
 
-                # SQL execution (Task 32)
+                # SQL execution
                 sql = parse_result["sql"]
                 st.code(sql, language="sql")
 
                 with st.spinner("⚡ SQL実行中..."):
-                    result = sys["sql_executor"].execute_query(sql)
+                    try:
+                        df = sys["connector"].execute_query(sql)
+                        row_count = len(df)
 
-                # Success (Task 34)
-                if result["success"]:
-                    # Display success message with row count
-                    if result["row_count"] >= 1000:
-                        st.success(f"✅ 成功 ({result['row_count']}件、最大1000件まで表示)")
-                    else:
-                        st.success(f"✅ 成功 ({result['row_count']}件)")
+                        # Display success message with row count
+                        if row_count >= 1000:
+                            st.success(f"✅ 成功 ({row_count}件、最大1000件まで表示)")
+                        else:
+                            st.success(f"✅ 成功 ({row_count}件)")
 
-                    # Display results
-                    if result["row_count"] > 0:
-                        df = pd.DataFrame(result["data"])
-                        st.dataframe(df, use_container_width=True)
+                        # Display results
+                        if row_count > 0:
+                            st.dataframe(df, use_container_width=True)
 
-                        # CSV download button
-                        csv = df.to_csv(index=False).encode("utf-8")
-                        st.download_button(
-                            label="📥 CSVダウンロード",
-                            data=csv,
-                            file_name=f"query_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                            mime="text/csv",
+                            # CSV download button
+                            csv = df.to_csv(index=False).encode("utf-8")
+                            st.download_button(
+                                label="📥 CSVダウンロード",
+                                data=csv,
+                                file_name=f"query_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                mime="text/csv",
+                            )
+
+                            st.info("SQLは誤りを含む場合があります。内容はご確認ください。")
+                        else:
+                            st.info("📊 結果: 0件")
+
+                        # Save to history
+                        if "query_history" not in st.session_state:
+                            st.session_state.query_history = []
+
+                        st.session_state.query_history.insert(
+                            0,
+                            {
+                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "question": user_input,
+                                "sql": sql,
+                                "row_count": row_count,
+                                "success": True,
+                            },
                         )
 
-                        st.info("SQLは誤りを含む場合があります。内容はご確認ください。")
-                    else:
-                        st.info("📊 結果: 0件")
+                        # Success - reset state and break retry loop
+                        st.session_state.is_executing = False
+                        break
 
-                    # Save to history (Task 35)
-                    if "query_history" not in st.session_state:
-                        st.session_state.query_history = []
+                    except (ValueError, PermissionError, RuntimeError) as e:
+                        # SQL execution failed (retry logic)
+                        error_message = str(e)
 
-                    st.session_state.query_history.insert(
-                        0,
-                        {
-                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "question": user_input,
-                            "sql": sql,
-                            "row_count": result["row_count"],
-                            "success": True,
-                        },
-                    )
+                        if attempt < max_retries - 1:
+                            # Determine if retry should be attempted
+                            error_type = "syntax_error"  # Default
+                            if "禁止操作" in error_message or "許可されていません" in error_message:
+                                error_type = "permission_error"
+                            elif "no such column" in error_message.lower():
+                                error_type = "column_error"
+                            elif "no such table" in error_message.lower():
+                                error_type = "table_error"
 
-                    # Success - reset state and break retry loop
-                    st.session_state.is_executing = False
-                    break
+                            should_retry = sys["error_handler"].should_retry(error_type)
 
-                else:
-                    # SQL execution failed (Task 33 retry logic)
-                    if attempt < max_retries - 1:
-                        # Determine if retry should be attempted
-                        error_type = "syntax_error"  # Default
-                        if "禁止操作" in result.get("error", ""):
-                            error_type = "permission_error"
-                        elif "no such column" in result.get("error", "").lower():
-                            error_type = "column_error"
-                        elif "no such table" in result.get("error", "").lower():
-                            error_type = "table_error"
-
-                        should_retry = sys["error_handler"].should_retry(error_type)
-
-                        if should_retry:
-                            st.warning(
-                                f"🔄 SQL実行エラー、修正中... ({attempt + 1}/{max_retries})"
-                            )
-                            error_context = {
-                                "sql": sql,
-                                "error_message": result.get("error", "実行エラー"),
-                            }
-                            continue
+                            if should_retry:
+                                st.warning(
+                                    f"🔄 SQL実行エラー、修正中... ({attempt + 1}/{max_retries})"
+                                )
+                                error_context = {
+                                    "sql": sql,
+                                    "error_message": error_message,
+                                }
+                                continue
+                            else:
+                                # Non-retryable error
+                                error_result = sys["error_handler"].handle_error(
+                                    error_type, error_message, sql
+                                )
+                                st.error(error_result["display_message"])
+                                with st.expander("エラー詳細"):
+                                    st.text(error_result["error_context"])
+                                st.session_state.is_executing = False
+                                return
                         else:
-                            # Non-retryable error
-                            error_result = sys["error_handler"].handle_error(
-                                error_type, result.get("error", ""), sql
-                            )
-                            st.error(error_result["display_message"])
-                            with st.expander("エラー詳細"):
-                                st.text(error_result["error_context"])
+                            # Max retries reached
+                            st.error("❌ SQL実行に失敗しました（リトライ上限）")
+                            st.error(error_message)
+                            with st.expander("実行されたSQL"):
+                                st.code(sql, language="sql")
                             st.session_state.is_executing = False
                             return
-                    else:
-                        # Max retries reached
-                        st.error("❌ SQL実行に失敗しました（リトライ上限）")
-                        st.error(result.get("error", "不明なエラー"))
-                        with st.expander("実行されたSQL"):
-                            st.code(sql, language="sql")
-                        st.session_state.is_executing = False
-                        return
 
             except Exception as e:
                 st.error(f"❌ 予期しないエラー: {str(e)}")
